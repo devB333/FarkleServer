@@ -32,49 +32,101 @@ const maxDieRangeY = INTERNAL_CANVAS_HEIGHT - DIE_SIZE - 10;
 let spots = generateValidSpots();// this genrates valid spots for the dice
 
 
+
 // socket vars im using: socket.roomCode and socket.playerNumber
 io.on('connection', (socket) => {// inside this method is where all calls and messages to and from a specifc socket are sent, that socket is the way to access that specifc player
     console.log('player connected:', socket.id);
     
-  
-    socket.on('joinRoom', (roomCode) =>// join room handles putting two players into a room, the client will emit 'joinRoom' along with a room code command
+    //TO DO: Add score to win attr to room and assign it when a new room is made
+    //TO DO: Add Invalid Input handling when data is wrong
+    socket.on('joinRoom', (data) =>// join room handles putting two players into a room, the client will emit 'joinRoom' along with a room code command
     {
-        socket.roomCode = roomCode;// attatch room code to socket. This makes a custom var to be referenced anywhere now. So you can always get this sockets room code just by doing socket.roomCode anywhere in this lambda.
-        if(rooms.has(roomCode))
+
+        
+        if(rooms.has(data.roomCode) && rooms.get(data.roomCode).playersInRoom.size <= 2)
         {
-            rooms.get(roomCode).playersInRoom.set(socket.id, new Player(socket.id));// players in room is the nest HashMap inside the rooms object inside the HashMap
-            socket.join(socket.roomCode);// now they are in the same room so you can make an emssion to anyone but that socket in the same room by doing socket.to(socket.roomCode).emit();
-            const obj = {dice: rooms.get(socket.roomCode).dice, pendingScore: 0, hasRolled: true, hasBusted: rooms.get(socket.roomCode).hasBusted, playersRound: rooms.get(socket.roomCode).playersRound};
-            io.to(socket.roomCode).emit("newDice", obj);
+            rooms.get(data.roomCode).playersInRoom.set(socket.id, new Player(socket.id, data.name));// players in room is the nest HashMap inside the rooms object inside the HashMap
+            socket.join(data.roomCode);// now they are in the same room so you can make an emssion to anyone but that socket in the same room by doing socket.to(socket.roomCode).emit();
+
+            socket.roomCode = data.roomCode;// attatch room code to socket. This makes a custom var to be referenced anywhere now. So you can always get this sockets room code just by doing socket.roomCode anywhere in this lambda.
+           
+            socket.playerNumber = rooms.get(socket.roomCode).playersInRoom.size;// either one or two depending on what player it is
+            rooms.get(socket.roomCode).playersInRoom.get(socket.id).playerNumber = socket.playerNumber;// update player num, maybe put this in a function so you dont have to write it twice
+            moveToRoom();
         }
-        else{
+        else if(data.roomCode == ""){// means there is no room
+            const roomCode = "1234";// this will be hashed to a unique string
 
             const newRoom = new Room();
-            newRoom.playersInRoom.set(socket.id, new Player(socket.id));// add new player to players in room Map of room object
-            rooms.set(socket.roomCode, newRoom); // add newRoom to rooms HashMap
+            newRoom.playersInRoom.set(socket.id, new Player(socket.id, data.name));// add new player to players in room Map of room object
+            rooms.set(roomCode, newRoom); // add newRoom to rooms HashMap
             
-            socket.join(socket.roomCode);
-            const obj = {dice: rooms.get(socket.roomCode).dice, pendingScore: 0, hasRolled: true, hasBusted: rooms.get(socket.roomCode).hasBusted, playersRound: rooms.get(socket.roomCode).playersRound};
-            io.to(socket.roomCode).emit("newDice", obj);
+            socket.join(roomCode);
+            socket.roomCode = roomCode; // assign new room code to socket
+
+            socket.playerNumber = rooms.get(socket.roomCode).playersInRoom.size;// either one or two depending on what player it is
+            rooms.get(socket.roomCode).playersInRoom.get(socket.id).playerNumber = socket.playerNumber;// update player num
+
+            console.log(rooms.get(socket.roomCode).playersInRoom.get(socket.id).name);
+            console.log(socket.roomCode);
+
+            moveToRoom();
+        }
+        else
+        {
+          if(rooms.has(data.roomCode) && rooms.get(data.roomCode).playersInRoom.size >= 2)
+          {
+             // TO DO: tell client lobby is full
+          }
+
         }
 
-        socket.playerNumber = rooms.get(roomCode).playersInRoom.size;// either one or two depending on what player it is
-        rooms.get(roomCode).playersInRoom.get(socket.id).playerNumber = socket.playerNumber;
         
+        
+        function moveToRoom()
+        {
+          console.log('moveToRoom');
+          socket.emit('moveToRoom');
+        }
 
 
-
-        socket.emit('setPlayerNum', socket.playerNumber);// sets playerNumber client side
-
-        console.log(socket.id + "now in room: " + socket.roomCode);
         console.log(rooms.get(socket.roomCode).playersInRoom);
-        console.log("PlayerNumber is: " +  socket.playerNumber + "and playerNumber is: " + rooms.get(roomCode).playersInRoom.get(socket.id).playerNumber);
+
+        
     })
 
     socket.on('disconnect', ()=>{
         console.log('player disconnected', socket.id);
     });
 
+    socket.on('getRoomInfo', ()=>{
+      const players = rooms.get(socket.roomCode).playersInRoom;
+
+      const playerNames = [];
+      players.forEach((p,key)=>
+        {
+          playerNames.push(p.name);// add the emit and finish functionality
+      });
+
+      const data = {
+        playerNames: playerNames,
+        roomCode: socket.roomCode
+      };
+      io.to(socket.roomCode).emit('roomInfo', data);// when another player joins the room this will rerun
+    });
+
+    //---------------------------------------------------------------------------- Below Game Functions, Above Room/Lobby Functions
+
+
+    socket.on('gameStart',()=>{
+      socket.emit('setPlayerNum', socket.playerNumber);// sets playerNumber client side
+      const obj = {dice: rooms.get(socket.roomCode).dice, pendingScore: 0, hasRolled: true, hasBusted: rooms.get(socket.roomCode).hasBusted, playersRound: rooms.get(socket.roomCode).playersRound};
+      io.to(socket.roomCode).emit("newDice", obj);
+
+      console.log(socket.id + "now in room: " + socket.roomCode);
+        console.log(rooms.get(socket.roomCode).playersInRoom);
+        console.log("PlayerNumber is: " +  socket.playerNumber + "and playerNumber is: " + rooms.get(roomCode).playersInRoom.get(socket.id).playerNumber);
+    });
     socket.on('bankButtonPressedClient', (state) =>{// handles syncing bank button presses animation
         socket.to(socket.roomCode).emit('bankButtonPressedServer', state)
     });// end bankButtonPressedClient
@@ -262,10 +314,11 @@ httpServer.listen(3000, () => {
 });
 
 class Player{
-    constructor(id, playerNumber)
+    constructor(id, name)
     {
         this.id = id;
-        this.playerNumber = 0;
+        this.playerNumber = 0;// this will either be 1 or 2, it is set right after the constructor call. 0 is a placeholder to check for invalid info
+        this.name = name;
         console.log("player added");
     }
 
@@ -280,7 +333,7 @@ class Player{
 class Room{
 
   
-    constructor(){
+    constructor(){//TO DO: Handle Auto Randomize playersRound on constructor to decide who goes first
 
         this.playersInRoom = new Map()// socket.id is key
         
