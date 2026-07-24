@@ -115,18 +115,48 @@ io.on('connection', (socket) => {// inside this method is where all calls and me
       io.to(socket.roomCode).emit('roomInfo', data);// when another player joins the room this will rerun
     });
 
+    socket.on('tryStartGame',()=>{
+
+      let response = false; // false if game cant start(not enough players), true if it can
+
+      if(rooms.get(socket.roomCode).playersInRoom.size == 2)
+        response = true;
+      else
+      {
+
+      }
+
+      io.to(socket.roomCode).emit('tryStartGameResponse',response);
+    });
+
     //---------------------------------------------------------------------------- Below Game Functions, Above Room/Lobby Functions
 
+    
 
     socket.on('gameStart',()=>{
+      console.log("running gameStart")
       socket.emit('setPlayerNum', socket.playerNumber);// sets playerNumber client side
-      const obj = {dice: rooms.get(socket.roomCode).dice, pendingScore: 0, hasRolled: true, hasBusted: rooms.get(socket.roomCode).hasBusted, playersRound: rooms.get(socket.roomCode).playersRound};
+      const obj = {
+        dice: rooms.get(socket.roomCode).dice,
+        pendingScore: 0,
+        hasRolled: true,
+        hasBusted: rooms.get(socket.roomCode).hasBusted,
+        playersRound: rooms.get(socket.roomCode).playersRound};
       io.to(socket.roomCode).emit("newDice", obj);
 
+      const playerNames = [];
+
+      rooms.get(socket.roomCode).playersInRoom.forEach((p, key)=>{
+        playerNames.push(p.name);
+      });
+
+      io.to(socket.roomCode).emit('gameSetPlayerNames', playerNames);
+        
       console.log(socket.id + "now in room: " + socket.roomCode);
         console.log(rooms.get(socket.roomCode).playersInRoom);
-        console.log("PlayerNumber is: " +  socket.playerNumber + "and playerNumber is: " + rooms.get(roomCode).playersInRoom.get(socket.id).playerNumber);
+        console.log("PlayerNumber is: " +  socket.playerNumber + "and playerNumber is: " + rooms.get(socket.roomCode).playersInRoom.get(socket.id).playerNumber);
     });
+
     socket.on('bankButtonPressedClient', (state) =>{// handles syncing bank button presses animation
         socket.to(socket.roomCode).emit('bankButtonPressedServer', state)
     });// end bankButtonPressedClient
