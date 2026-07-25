@@ -35,9 +35,9 @@ let spots = generateValidSpots();// this genrates valid spots for the dice
 
 // socket vars im using: socket.roomCode and socket.playerNumber
 io.on('connection', (socket) => {// inside this method is where all calls and messages to and from a specifc socket are sent, that socket is the way to access that specifc player
-    console.log('player connected:', socket.id);
+    console.log('player connected:' +  socket.id), " " ;
     
-    //TO DO: Add score to win attr to room and assign it when a new room is made
+    
     //TO DO: Add Invalid Input handling when data is wrong
     socket.on('joinRoom', (data) =>// join room handles putting two players into a room, the client will emit 'joinRoom' along with a room code command
     {
@@ -55,9 +55,11 @@ io.on('connection', (socket) => {// inside this method is where all calls and me
             moveToRoom();
         }
         else if(data.roomCode == ""){// means there is no room
-            const roomCode = "1234";// this will be hashed to a unique string
+            const roomCode = "1234";// TO DO, make room code hash system this will be hashed to a unique string
 
-            const newRoom = new Room();
+
+
+            const newRoom = new Room(parseInt(data.scoreToWin));
             newRoom.playersInRoom.set(socket.id, new Player(socket.id, data.name));// add new player to players in room Map of room object
             rooms.set(roomCode, newRoom); // add newRoom to rooms HashMap
             
@@ -155,6 +157,25 @@ io.on('connection', (socket) => {// inside this method is where all calls and me
       console.log(socket.id + "now in room: " + socket.roomCode);
         console.log(rooms.get(socket.roomCode).playersInRoom);
         console.log("PlayerNumber is: " +  socket.playerNumber + "and playerNumber is: " + rooms.get(socket.roomCode).playersInRoom.get(socket.id).playerNumber);
+    });
+
+    socket.on('newGame', ()=>{
+      const room = rooms.get(socket.roomCode);
+      room.reset();
+
+      const obj = {
+        dice: rooms.get(socket.roomCode).dice,
+        pendingScore: 0,
+        hasRolled: true,
+        hasBusted: rooms.get(socket.roomCode).hasBusted,
+        playersRound: rooms.get(socket.roomCode).playersRound};
+      io.to(socket.roomCode).emit("newDice", obj);
+
+
+      const playerScores = [room.playerOneScore, room.playerTwoScore];
+      console.log(playerScores)
+      io.to(socket.roomCode).emit('newGameStart', playerScores);
+
     });
 
     socket.on('bankButtonPressedClient', (state) =>{// handles syncing bank button presses animation
@@ -300,6 +321,8 @@ io.on('connection', (socket) => {// inside this method is where all calls and me
         room.playersRound = 1;// swap whos round it is
       }
 
+      
+
 
       console.log("Socket Player Num: " + socket.playerNumber + " PlayersRound: " + room.playersRound);
       
@@ -330,6 +353,20 @@ io.on('connection', (socket) => {// inside this method is where all calls and me
 
       io.to(socket.roomCode).emit('newDice', diceRetrunObj);// send new dice and pending score 0 back to genral purpose new Dice handler
       io.to(socket.roomCode).emit('endRoundBankResponse', endRoundReturnObj);// used to reset banked dice and update the return score for the respective player
+
+
+      if((room.playerOneScore >= room.scoreToWin) || (room.playerTwoScore >= room.scoreToWin))
+      {
+        const hasWonObj = {
+          playerNumber: rooms.get(socket.roomCode).playersInRoom.get(socket.id).playerNumber,
+          playerOneScore: room.playerOneScore,
+          playerTwoScore: room.playerTwoScore,
+        }
+        io.to(socket.roomCode).emit('hasWon', hasWonObj);
+        console.log("Player Just Won")
+      }
+      else
+        console.log("No one won")
 
       console.log("emissions ran")
       console.log(endRoundReturnObj);
@@ -363,28 +400,55 @@ class Player{
 class Room{
 
   
-    constructor(){//TO DO: Handle Auto Randomize playersRound on constructor to decide who goes first
+    constructor(scoreToWin){
+
+        this.scoreToWin = scoreToWin;
+
+        console.log("Score to Win: " + this.scoreToWin)
 
         this.playersInRoom = new Map()// socket.id is key
         
         this.playerOneScore = 0;
         this.playerTwoScore = 0;
 
-        this.playersRound = 1;// keeps track of whose round it is
+        this.playersRound = Math.round((Math.random()) + 1);// keeps track of whose round it is
+        console.log("Players Round: " + this.playersRound);
         
         this.hasRolled = true;
 
         this.dice = reRollDice(6);
         while(checkBust(this.dice) == true)
           this.dice = reRollDice(6);
-        console.log(this.dice);
+        //console.log(this.dice);
         this.bankedDice = []; 
 
         this.hasBusted = false; // used to track weather the curr player has busted
         
         this.roundScore = 0;// add to this after they bank the dice
         this.pendingScore = 0;// used to display the pending score ui after a player selects the dice
+
+      
     }
+
+      reset() {
+      this.playerOneScore = 0;
+      this.playerTwoScore = 0;
+
+      this.playersRound = Math.round(Math.random() + 1);
+
+      this.hasRolled = true;
+
+      this.dice = reRollDice(6);
+      while (checkBust(this.dice)) {
+          this.dice = reRollDice(6);
+      }
+
+      this.bankedDice = [];
+
+      this.hasBusted = false;
+      this.roundScore = 0;
+      this.pendingScore = 0;
+  }
 }
 // start handling dice -------------------------------------------------------------------------------------------------
 
