@@ -55,7 +55,12 @@ io.on('connection', (socket) => {// inside this method is where all calls and me
             moveToRoom();
         }
         else if(data.roomCode == ""){// means there is no room
-            const roomCode = "1234";// TO DO, make room code hash system this will be hashed to a unique string
+
+            let roomCode = createRoomCode();// TO DO, make room code hash system this will be hashed to a unique string
+            while(rooms.has(roomCode))
+            {
+              roomCode = createRoomCode();
+            }
 
 
 
@@ -83,7 +88,21 @@ io.on('connection', (socket) => {// inside this method is where all calls and me
 
         }
 
-        
+        function createRoomCode()
+        {
+          const ROOM_CODE_LENGTH = 4;
+          const ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+          let roomCode = '';
+
+
+          for(let i = 0; i <= 4; i++)
+          {
+            roomCode+= ALPHABET[Math.floor(Math.random()* ALPHABET.length)];
+          }
+
+          return roomCode;
+          
+        }
         
         function moveToRoom()
         {
