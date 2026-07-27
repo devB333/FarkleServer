@@ -6,7 +6,7 @@ This server manages player connections, game rooms, and authoritative game state
 
 ## Demo
 
-See the soon playable client:
+Play the game (deployment coming soon):
 https://github.com/devB333/FarkleClient
 
 ## Overview
