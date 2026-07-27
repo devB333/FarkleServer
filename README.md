@@ -4,6 +4,11 @@ Backend server for **Farkle Online Multiplayer**, a real-time multiplayer dice g
 
 This server manages player connections, game rooms, and authoritative game state synchronization between connected clients.
 
+## Demo
+
+See the soon playable client:
+https://github.com/devB333/FarkleClient
+
 ## Overview
 
 The Farkle server uses an event-driven architecture to allow multiple players to play simultaneously in independent game rooms.
@@ -17,6 +22,10 @@ The server acts as the authority for:
 - Game events
 
 Clients send player actions to the server, and the server broadcasts updated game state to all connected players.
+
+## Motivation
+
+I wanted to explore real-time multiplayer networking by building a complete online game. This project required designing a client-server architecture, synchronizing game state, and creating a responsive interface across desktop and mobile devices.
 
 ## Features
 
