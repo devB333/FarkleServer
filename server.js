@@ -1,3 +1,5 @@
+//TO DO: Handle room disconnect errors and force rerouting if stale room
+
 const express = require('express');// import express functionund
 const {createServer} = require('http'); // deconstruct create server function from http module in Node.js
 const {Server} = require('socket.io'); // deconstruct Server class from socket.io livrary
@@ -293,7 +295,7 @@ io.on('connection', (socket) => {// inside this method is where all calls and me
     socket.on('gameStart',()=>{
       if(!(rooms.has(socket.roomCode)))
       {
-        console.log('stale game')
+        console.log('stale game');// TO DO: Send an emit to the client to reroute them back to the home page, and away from the stale game
         return;
       }
       sessions.set(sessionID, socket.roomCode);
@@ -343,6 +345,14 @@ io.on('connection', (socket) => {// inside this method is where all calls and me
         socket.to(socket.roomCode).emit('bankButtonPressedServer', state)
     });// end bankButtonPressedClient
     
+    socket.on('clientRollButtonPressed', (state)=>{
+      socket.to(socket.roomCode).emit('rollButtonPressedServer', state);
+    });
+
+    socket.on('clientEndRoundButtonPressed', (state)=>{
+      socket.to(socket.roomCode).emit('endRoundButtonPressedServer', state);
+    });
+
     socket.on('selectDiceSync', (data)=>{// the data here is the newDiceArr and pendingScore to update the selected die selection
       rooms.get(socket.roomCode).dice = data.dice; // update the dice on the server so when they get banked we don't need to pass the dice again.
       rooms.get(socket.roomCode).pendingScore = data.pendingScore;// update pending score
