@@ -31,11 +31,110 @@ const maxDieRangeY = INTERNAL_CANVAS_HEIGHT - DIE_SIZE - 10;
 
 let spots = generateValidSpots();// this genrates valid spots for the dice
 
-
+const sessions = new Map();// stores K: sessionID, V: roomCode
 
 // socket vars im using: socket.roomCode and socket.playerNumber
 io.on('connection', (socket) => {// inside this method is where all calls and messages to and from a specifc socket are sent, that socket is the way to access that specifc player
-    console.log('player connected:' +  socket.id), " " ;
+    console.log('player connected:' + socket.id);
+
+    socket.sessionChecked = false;
+
+    const sessionID = socket.handshake.auth.sessionID;
+    socket.sessionID = sessionID;
+    console.log(sessionID);
+
+    // --- restore identity/room membership on reconnect ---
+    if (sessions.has(sessionID)) {
+        const room = rooms.get(sessions.get(sessionID));
+        let player = null;
+
+        if (room) {
+            console.log('in room iteration')
+            room.playersInRoom.forEach((p) => {
+                if (p.sessionID == sessionID) {
+                    player = p;
+                    console.log('found him');
+                }
+            });
+        }
+
+        if (player) {
+            room.playersInRoom.delete(player.id);
+            player.id = socket.id;
+            room.playersInRoom.set(player.id, player);
+
+            socket.roomCode = sessions.get(sessionID);
+            socket.playerNumber = player.playerNumber;
+            socket.join(socket.roomCode);
+
+
+            console.log("Reconnecting player:", player.name);
+            console.log("disconnectTimeout:", player.disconnectTimeout);
+            // cancel any pending "they left" cleanup timer, if you added one
+            if (player.disconnectTimeout) {
+                clearTimeout(player.disconnectTimeout);// clears timeOut
+                player.disconnectTimeout = null;
+                console.log("Clearing timeout");
+                console.log("Sending hide popup");
+                console.log("these are the players: " + room.playersInRoom);
+                io.to(socket.roomCode).emit('showDisconnectScreen', false);
+            }
+            player.disconnected = false;
+        }
+        socket.sessionChecked = true;
+    }
+    else {
+      console.log("no Session found");
+      socket.sessionChecked = true;
+    } 
+
+    socket.on('requestRejoin', (callback) => {
+
+      if(socket.sessionChecked == false)
+        console.log("Session not even checked yet");
+
+  if (!socket.roomCode || !sessions.has(socket.sessionID)) {
+    console.log('rejoinedFalse');
+    console.log("Socket Room Code: " + socket.roomCode);
+    console.log("sessionID: " + sessionID);
+    callback({ rejoined: false });
+    return;
+  }
+
+  const room = rooms.get(socket.roomCode);
+  if (!room) {
+    callback({ rejoined: false });
+    return;
+  }
+
+  const playerNames = [];
+  room.playersInRoom.forEach((p) =>{
+    playerNames[p.playerNumber - 1] = p.name;
+  }
+
+);
+
+  callback({
+    rejoined: true,
+    data: {
+      playerNumber: socket.playerNumber,
+      playerNames,
+      scoreToWin: room.scoreToWin,
+      playerOneScore: room.playerOneScore,
+      playerTwoScore: room.playerTwoScore,
+      playersRound: room.playersRound,
+      hasRolled: room.hasRolled,
+      dice: room.dice,
+      bankedDice: room.bankedDice,
+      hasBusted: room.hasBusted,
+      roundScore: room.roundScore,
+      pendingScore: room.pendingScore,
+      isNewRound : room.isNewRound
+    }
+  });
+});
+    
+
     
     
     //TO DO: Add Invalid Input handling when data is wrong
@@ -45,13 +144,14 @@ io.on('connection', (socket) => {// inside this method is where all calls and me
         
         if(rooms.has(data.roomCode) && rooms.get(data.roomCode).playersInRoom.size <= 2)
         {
-            rooms.get(data.roomCode).playersInRoom.set(socket.id, new Player(socket.id, data.name));// players in room is the nest HashMap inside the rooms object inside the HashMap
+            rooms.get(data.roomCode).playersInRoom.set(socket.id, new Player(socket.id, data.name, sessionID));// players in room is the nest HashMap inside the rooms object inside the HashMap
             socket.join(data.roomCode);// now they are in the same room so you can make an emssion to anyone but that socket in the same room by doing socket.to(socket.roomCode).emit();
 
             socket.roomCode = data.roomCode;// attatch room code to socket. This makes a custom var to be referenced anywhere now. So you can always get this sockets room code just by doing socket.roomCode anywhere in this lambda.
            
             socket.playerNumber = rooms.get(socket.roomCode).playersInRoom.size;// either one or two depending on what player it is
             rooms.get(socket.roomCode).playersInRoom.get(socket.id).playerNumber = socket.playerNumber;// update player num, maybe put this in a function so you dont have to write it twice
+           
             moveToRoom();
         }
         else if(data.roomCode == ""){// means there is no room
@@ -65,7 +165,7 @@ io.on('connection', (socket) => {// inside this method is where all calls and me
 
 
             const newRoom = new Room(parseInt(data.scoreToWin));
-            newRoom.playersInRoom.set(socket.id, new Player(socket.id, data.name));// add new player to players in room Map of room object
+            newRoom.playersInRoom.set(socket.id, new Player(socket.id, data.name, sessionID));// add new player to players in room Map of room object
             rooms.set(roomCode, newRoom); // add newRoom to rooms HashMap
             
             socket.join(roomCode);
@@ -77,6 +177,7 @@ io.on('connection', (socket) => {// inside this method is where all calls and me
             console.log(rooms.get(socket.roomCode).playersInRoom.get(socket.id).name);
             console.log(socket.roomCode);
 
+            
             moveToRoom();
         }
         else
@@ -111,13 +212,48 @@ io.on('connection', (socket) => {// inside this method is where all calls and me
         }
 
 
-        console.log(rooms.get(socket.roomCode).playersInRoom);
+        if(rooms.has(socket.roomCode))
+          console.log(rooms.get(socket.roomCode).playersInRoom);
 
         
     })
 
     socket.on('disconnect', ()=>{
+
         console.log('player disconnected', socket.id);
+      if (!socket.roomCode) return;          // never joined a room at all
+
+          const room = rooms.get(socket.roomCode);
+          if (!room) return;                      // room doesn't exist (already cleaned up, etc.)
+
+          const player = room.playersInRoom.get(socket.id);
+          if (!player) return; 
+          
+          player.disconnected = true;
+        io.to(socket.roomCode).emit('showDisconnectScreen', true);
+        //console.log("start timeout timer");
+        player.disconnectTimeout = setTimeout(()=>{
+          console.log("Timeout fired");
+          const currentRoom = rooms.get(socket.roomCode);
+          if(!currentRoom) return;
+
+          const currPlayer = currentRoom.playersInRoom.get(player.id);
+          if(currPlayer && currPlayer.disconnected){
+
+            currentRoom.playersInRoom.forEach((p)=>{// this is the FIX to the reconnect bug, before we were only removing the sessionID -> roomCode pointer for the player that initated the disconnect, meaning that the player who was still in the game was left with a stale sessionID -> roomCode pointer to a room that no longer existed. So if they disconnected from the next game and tried to rejoin, it would point to a roomCode and room that was null. Never letting them rejoin. Simple fix, took me hours 
+              sessions.delete(p.sessionID); // remove room code from every session
+            });
+            currentRoom.playersInRoom.delete(currPlayer.id);
+            socket.to(socket.roomCode).emit('oppoentLeft');
+            
+            rooms.delete(socket.roomCode);
+            io.to(socket.roomCode).emit('fullDisconn');// hook into this in room to remove the other player
+            console.log("Gone");
+          }
+        }, 25000)//25000
+
+        //console.log("Stored timeout:", player.disconnectTimeout);
+        //console.log("Player object:", player);
     });
 
     socket.on('getRoomInfo', ()=>{
@@ -155,6 +291,12 @@ io.on('connection', (socket) => {// inside this method is where all calls and me
     
 
     socket.on('gameStart',()=>{
+      if(!(rooms.has(socket.roomCode)))
+      {
+        console.log('stale game')
+        return;
+      }
+      sessions.set(sessionID, socket.roomCode);
       console.log("running gameStart")
       socket.emit('setPlayerNum', socket.playerNumber);// sets playerNumber client side
       const obj = {
@@ -258,17 +400,18 @@ io.on('connection', (socket) => {// inside this method is where all calls and me
 
       room.hasRolled = true;// this prevents them from rolling again, because the request is coming from a new round, or a standard roll
 
-      if((room.dice.length == 0) || (isNewRound))
+      if((room.dice.length == 0) || (room.isNewRound))
       {
         newDice = reRollDice(6);
         room.bankedDice = [];
 
           
 
-          if(isNewRound)
+          if(room.isNewRound)
         {
           io.to(socket.roomCode).emit('newRoundStart'); // used to set isNewRound to false after the new round has started
           room.roundScore = 0;
+          room.isNewRound = false;
         }
 
         const returnBankedDiceObj = {
@@ -304,6 +447,7 @@ io.on('connection', (socket) => {// inside this method is where all calls and me
           room.playersRound = 1;
 
         room.hasRolled = false;// prepare hasRolled for new player
+        room.isNewRound = true;
       }
 
       const returnDiceObj = {
@@ -372,6 +516,7 @@ io.on('connection', (socket) => {// inside this method is where all calls and me
 
       io.to(socket.roomCode).emit('newDice', diceRetrunObj);// send new dice and pending score 0 back to genral purpose new Dice handler
       io.to(socket.roomCode).emit('endRoundBankResponse', endRoundReturnObj);// used to reset banked dice and update the return score for the respective player
+      room.isNewRound = true;
 
 
       if((room.playerOneScore >= room.scoreToWin) || (room.playerTwoScore >= room.scoreToWin))
@@ -400,8 +545,9 @@ httpServer.listen(3000, () => {
 });
 
 class Player{
-    constructor(id, name)
+    constructor(id, name, sessionID)
     {
+        this.sessionID = sessionID;
         this.id = id;
         this.playerNumber = 0;// this will either be 1 or 2, it is set right after the constructor call. 0 is a placeholder to check for invalid info
         this.name = name;
@@ -446,7 +592,7 @@ class Room{
         this.roundScore = 0;// add to this after they bank the dice
         this.pendingScore = 0;// used to display the pending score ui after a player selects the dice
 
-      
+      this.isNewRound = false;
     }
 
       reset() {
