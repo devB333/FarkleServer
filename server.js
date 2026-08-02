@@ -7,13 +7,19 @@ const {Server} = require('socket.io'); // deconstruct Server class from socket.i
 const app = express()// creates app object from express method
 const httpServer = createServer(app)// pushes express app object as the event 'request' handler for http requests
 
-// io here is the WebSocket server attatched to the http server instance, it is used for establishing connection and managing the sockets, emitting to everyone, and emission to a specifc socket room
+const CLIENT_URL = process.env.CLIENT_URL;
 
+// io here is the WebSocket server attatched to the http server instance, it is used for establishing connection and managing the sockets, emitting to everyone, and emission to a specifc socket room
 const io = new Server(httpServer, {// gives the httpServer to the io Server object so it can list for when the http server makes an http 'upgrade request'
     cors:{
-        origin:'*'
+        origin:[`${CLIENT_URL}`, "http://localhost:5173"]
     }
-})
+});
+
+const PORT = process.env.PORT || 3001;
+httpServer.listen(PORT, () => {
+    console.log(`server listening on port ${PORT}`);
+});
 
 let dieCounter = 0;
 
@@ -550,9 +556,7 @@ io.on('connection', (socket) => {// inside this method is where all calls and me
     });// end onEndRoundBank
 });// end socket on connect
 
-httpServer.listen(3000, () => {
-    console.log('server running on port 3000');
-});
+
 
 class Player{
     constructor(id, name, sessionID)
